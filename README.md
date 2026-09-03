@@ -1,6 +1,17 @@
+<div align="center">
+
+<img src="watchman.jpg" alt="Argus Panoptes, the hundred-eyed watchman" width="720">
+
 # Panoptes
 
-Finds copied C++ submissions in 42 projects.
+**Finds copied C++ submissions in 42 projects.**
+
+<em>Argus Panoptes kept a hundred eyes and slept with only a few closed at a time,<br>
+so nothing passed him unseen — until someone patient enough lulled every eye shut.</em>
+
+</div>
+
+---
 
 You point it at one student's folder. It compares that folder against every
 public repository of the same project it can find — thousands of them — and
