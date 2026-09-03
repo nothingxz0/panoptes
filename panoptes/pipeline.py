@@ -74,7 +74,9 @@ def run(spec, stages=None, force=False, jobs=10, recover=False,
         _mark(state, "discover", spec, {"candidates": len(found)})
     elif "discover" in stages:
         n = len(json.load(open(cand_path))) if have_candidates else 0
-        log(f"[1/5] discover — already done ({n:,} candidates). --force to redo")
+        log(f"[1/5] discover — SKIPPED, using {n:,} candidates from a previous run.")
+        log(f"      This does not mean there are no new repositories.")
+        log(f"      Run './pan setup {spec.name} --refresh' to search the sources again.")
         state.setdefault("completed", {}).setdefault(
             "discover", {"at": "pre-existing", "candidates": n})
         save_state(spec, state)

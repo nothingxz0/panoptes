@@ -28,7 +28,15 @@ def cmd_setup(a):
     s = spec_mod.load(a.project)
     t0 = time.time()
     print(f"Building corpus for {s.label}\n")
-    pipeline.run(s, force=a.force, jobs=a.jobs, recover=a.recover,
+    stages = None
+    if a.refresh and not a.force:
+        # Re-run discovery against every source; later stages then pick up
+        # whatever is new on their own.
+        pipeline.run(s, stages=["discover"], force=True, max_repos=a.max,
+                     log=print)
+        stages = ["fetch", "recover", "index", "calibrate"] if a.recover \
+            else ["fetch", "index", "calibrate"]
+    pipeline.run(s, stages=stages, force=a.force, jobs=a.jobs, recover=a.recover,
                  max_repos=a.max, progress=lambda i, n, *r: _bar(i, n, r[0] if r else ""))
     print(f"\nReady in {(time.time()-t0)/60:.1f} min. Now run:")
     print(f"  ./pan check <submission_dir> -p {s.name} --student <github-handle>")
@@ -184,7 +192,11 @@ def build_parser():
     s_.add_argument("--max", type=int, help="cap candidates (for a quick trial run)")
     s_.add_argument("--recover", action="store_true",
                     help="also try Software Heritage for deleted repos (slow)")
-    s_.add_argument("--force", action="store_true", help="redo completed stages")
+    s_.add_argument("--refresh", action="store_true",
+                    help="search all sources again for new repos, then fetch "
+                         "and reindex only what is new")
+    s_.add_argument("--force", action="store_true",
+                    help="redo every stage from scratch, including reindexing")
     s_.set_defaults(fn=cmd_setup)
 
     c = sub.add_parser("check", help="compare one submission against the corpus")
