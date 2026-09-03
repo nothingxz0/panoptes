@@ -1,0 +1,14 @@
+# Corpus is multi-GB of third-party source — rebuilt with `./pan setup`, never committed.
+corpus/
+
+# Generated reports may contain student code.
+reports/
+
+# Credentials
+.token
+.env
+
+__pycache__/
+*.pyc
+*.sqlite
+*.sqlite-*

@@ -1,0 +1,76 @@
+# Pattern file for a single 42 project.
+# To support a new project, copy this file and change the values. No code changes.
+name: ft_irc
+label: "42 ft_irc — IRC server in C++98"
+
+# ---------------------------------------------------------------- DISCOVERY
+# How to FIND candidate repos on public platforms.
+discovery:
+  # GitHub search queries. Each is run and paged; results are merged.
+  # GitHub's language filter drops repos Linguist classified as C, Makefile or
+  # Shell, so the unfiltered variants are kept alongside the filtered ones.
+  queries:
+    - "ft_irc"
+    - "ft_irc language:C++"
+    - "ircserv"
+    - "ircserv language:C++"
+    - "ft-irc"
+    - "irc 42cursus"
+    - "ft_irc 42"
+    - "irc server 42school"
+    - "irc 42born2code"
+    - "ircserv 42"
+  # GitHub topics students commonly tag.
+  topics: [ft_irc, ft-irc, ircserv, 42cursus, 42school, 42born2code, ecole42]
+  # Repo-name regexes, used to widen/score candidates found by other means.
+  name_patterns:
+    - '(?i)ft[-_. ]?irc'
+    - '(?i)irc[-_]?serv'
+    - '(?i)irc[-_]?server'
+  # Skip repos outside this size band (KB). Filters empty stubs and 100MB
+  # repos full of build artifacts.
+  size_kb: {min: 40, max: 6000}
+  skip_forks: true
+  # Substrings used against the GH Archive event log (see cmp/gharchive.py).
+  # Case-insensitive; keep them broad, verification filters the noise.
+  archive_substrings: [ft_irc, ft-irc, ircserv, irc_server, irc-server, ftirc]
+
+# ------------------------------------------------------------- VERIFICATION
+# Given a downloaded directory, is this ACTUALLY ft_irc? Runs on every
+# candidate; also used to auto-detect what a student submitted.
+# Deliberately multi-signal: repo names lie, Makefiles use variables.
+verification:
+  min_source_files: 3
+  min_total_lines: 500
+  # Subject mandates `NAME = ircserv`. Soft signal: some use $(TARGET).
+  makefile_name: [ircserv]
+  makefile_name_weight: 1
+  # Subject-mandated IRC commands. Strong signal.
+  required_tokens:
+    threshold: 7          # must find at least this many
+    weight: 4
+    tokens: [PRIVMSG, JOIN, KICK, INVITE, TOPIC, MODE, PASS, NICK, USER]
+  # Supporting signals, each adds weight if present.
+  optional_tokens:
+    weight: 1
+    tokens: [poll, epoll, kqueue, socket, bind, listen, accept, "001", "433", "464"]
+  # If any of these appear, it is some other course's IRC project.
+  reject_tokens: [cs240, CS50, "Boost.Asio", "boost/asio"]
+  min_score: 5
+
+# ------------------------------------------------------------------- SOURCE
+# Which files count as the student's own work.
+source:
+  extensions: ['.cpp', '.hpp', '.h', '.tpp', '.ipp', '.cc', '.hh', '.cxx']
+  exclude_dirs: ['.git', 'build', 'obj', 'node_modules', 'vendor', 'third_party',
+                 'googletest', 'gtest', 'libft', '.vscode', 'cmake-build-debug']
+  # Files the subject provides — never counted as evidence.
+  basecode_files: []
+
+# ------------------------------------------------------------------ COMPARE
+compare:
+  k_high: 25              # large-block copying; honest pairs stay under ~8%
+  k_low: 10               # fragment detection; needs boilerplate suppression
+  winnow_window: 8
+  boilerplate_df: 0.25    # drop k-grams present in >= this fraction of corpus
+  report_top_n: 25
