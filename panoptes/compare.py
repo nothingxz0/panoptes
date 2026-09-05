@@ -2,6 +2,7 @@
 import os, statistics
 from collections import defaultdict
 from . import normalize, index as index_mod, verify as verify_mod, aststruct, typesig
+from . import locate as locate_mod
 
 
 class Match:
@@ -18,6 +19,8 @@ class Match:
         self.longest = 0          # longest identical token run
         self.sig_shared = 0       # functions with an identical type signature
         self.sig_frac = 0.0
+        self.dir = ""             # corpus path; for a sub-project this is the
+                                  # module directory, not the repository root
 
     @property
     def verdict(self):
@@ -87,6 +90,15 @@ def check(submission, spec, student_handles=(), top_n=None, evidence=True,
     k, w = meta["k"], meta["w"]
     top_n = top_n or spec.compare.get("report_top_n", 25)
 
+    # A sub-project submission may be handed to us as the module directory
+    # itself, or as the parent holding every module. Accept both.
+    if spec.is_subproject:
+        v0 = verify_mod.verify(submission, spec)
+        if not v0.ok:
+            found = locate_mod.locate(locate_mod.walk_local(submission, spec), spec)
+            if found and found.path:
+                submission = os.path.join(submission, found.path)
+
     v = verify_mod.verify(submission, spec)
     stream = normalize.token_stream(submission, spec)
     prints = index_mod.fingerprints(stream, k, w)
@@ -104,8 +116,8 @@ def check(submission, spec, student_handles=(), top_n=None, evidence=True,
         for h, rid in con.execute(q, chunk):
             shared[rid].add(h)
 
-    repos = {rid: (name, url, owner, np) for rid, name, url, owner, np in
-             con.execute("SELECT id,name,url,owner,nprints FROM repo")}
+    repos = {rid: (name, url, owner, np, rdir) for rid, name, url, owner, np, rdir in
+             con.execute("SELECT id,name,url,owner,nprints,dir FROM repo")}
 
     # Score against the null distribution of the BEST match out of N, not the
     # all-pairs distribution — see cmp/calibrate.py. Falls back to all-pairs
@@ -122,7 +134,7 @@ def check(submission, spec, student_handles=(), top_n=None, evidence=True,
 
     matches = []
     for rid, hs in shared.items():
-        name, url, owner, np = repos[rid]
+        name, url, owner, np, rdir = repos[rid]
         clean = {h for (h,) in con.execute(
             "SELECT DISTINCT hash FROM print WHERE repo=? AND hash NOT IN "
             "(SELECT hash FROM boiler)", (rid,))}
@@ -130,6 +142,7 @@ def check(submission, spec, student_handles=(), top_n=None, evidence=True,
         cont = len(hs & clean) / denom
         z = (cont - mean) / sd
         m = Match(name, url, owner, len(hs & clean), cont, z, [])
+        m.dir = rdir
         m.p99 = p99
         m.run_threshold = meta.get("run_null_threshold", 250)
         if owner.lower() in handles:
@@ -147,9 +160,8 @@ def check(submission, spec, student_handles=(), top_n=None, evidence=True,
         for i, m in enumerate(matches):
             if m.verdict == "NORMAL" and i > 5:
                 continue
-            d = con.execute("SELECT dir FROM repo WHERE name=?", (m.repo,)).fetchone()
-            if d:
-                root = os.path.join(spec.corpus_dir, d[0])
+            if m.dir:
+                root = os.path.join(spec.corpus_dir, m.dir)
                 m.regions = _longest_runs(stream, root, spec)
                 m.longest = max((r["tokens"] for r in m.regions), default=0)
                 if sub_funcs:

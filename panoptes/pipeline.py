@@ -39,7 +39,7 @@ def _mark(state, stage, spec, detail):
 
 
 def run(spec, stages=None, force=False, jobs=10, recover=False,
-        max_repos=None, log=print, progress=None):
+        max_repos=None, deep=False, log=print, progress=None):
     """Run the full corpus pipeline. Returns the final state dict."""
     all_stages = ["discover", "fetch", "recover", "index", "calibrate"]
     stages = stages or [s for s in all_stages if s != "recover" or recover]
@@ -58,17 +58,23 @@ def run(spec, stages=None, force=False, jobs=10, recover=False,
         log("[1/5] discovering repositories")
         found = json.load(open(cand_path)) if os.path.isfile(cand_path) else {}
         before = len(found)
-        src = discover.token_source()
-        log(f"      GitHub search — {'token from ' + src if src else 'no token (slow, capped)'}")
-        found.update({k: v for k, v in
-                      discover.discover(spec, max_repos=max_repos).items()
-                      if k not in found})
-        log(f"      GH Archive event log (finds deleted/renamed repos)")
+        # The event log first: one query returns every repository that ever
+        # existed, in seconds, and covers more than paged search does. GitHub
+        # search then adds only what the log's name patterns miss.
+        log("      GH Archive event log")
         try:
-            found.update({k: v for k, v in gharchive.find_repos(spec, verbose=False).items()
-                          if k not in found})
+            arch = gharchive.find_repos(spec, verbose=False)
+            found.update({k: v for k, v in arch.items() if k not in found})
+            log(f"      {len(arch):,} repos from the event log")
         except Exception as e:                                   # noqa: BLE001
             log(f"      GH Archive unavailable: {str(e)[:100]}")
+        src = discover.token_source()
+        log(f"      GitHub search — {'authenticated' if src else 'anonymous (slow)'}"
+            f"{', month-sliced' if deep else ''}")
+        found.update({k: v for k, v in
+                      discover.discover(spec, max_repos=max_repos,
+                                        slice_by_month=deep).items()
+                      if k not in found})
         discover.save(found, cand_path)
         log(f"      {len(found)} candidates ({len(found)-before} new)")
         _mark(state, "discover", spec, {"candidates": len(found)})

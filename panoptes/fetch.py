@@ -2,7 +2,7 @@
 the project we're after. Maintains corpus/<project>/_manifest.json.
 """
 import os, json, base64, shutil, subprocess, concurrent.futures as cf
-from . import verify as verify_mod
+from . import verify as verify_mod, locate as locate_mod
 
 MANIFEST = "_manifest.json"
 
@@ -38,6 +38,52 @@ def _git_auth_args():
     return ["-c", f"http.extraheader=Authorization: Basic {basic}"]
 
 
+def _run(cmd, cwd=None, timeout=180):
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="/bin/true")
+    return subprocess.run(cmd, capture_output=True, timeout=timeout, cwd=cwd, env=env)
+
+
+def clone_subproject(url, dest, spec, timeout=240):
+    """Fetch only the sub-project directory from a repository.
+
+    A blobless clone downloads commit and tree objects but no file contents, so
+    the full path listing is available for a fraction of the transfer. The
+    module directory is identified from that listing, and only its blobs are
+    then materialised via sparse checkout. For a repository holding ten CPP
+    modules this transfers roughly a tenth of the data.
+    """
+    if os.path.isdir(dest):
+        return True, "already present", None
+    auth = _git_auth_args()
+    r = _run(["git"] + auth + ["clone", "--quiet", "--depth", "1", "--no-tags",
+                               "--single-branch", "--filter=blob:none",
+                               "--no-checkout", url, dest], timeout=timeout)
+    if r.returncode != 0:
+        return False, r.stderr.decode(errors="ignore").strip()[:120], None
+
+    r = _run(["git", "-C", dest, "ls-tree", "-r", "HEAD", "--name-only"],
+             timeout=90)
+    if r.returncode != 0:
+        shutil.rmtree(dest, ignore_errors=True)
+        return False, "ls-tree failed", None
+    paths = r.stdout.decode(errors="ignore").split("\n")
+
+    found = locate_mod.locate(paths, spec)
+    if not found:
+        shutil.rmtree(dest, ignore_errors=True)
+        return False, "sub-project not present in repo", None
+
+    _run(["git", "-C", dest, "sparse-checkout", "init", "--no-cone"], timeout=60)
+    pattern = "/" + found.path.strip("/") + "/**\n" if found.path else "/*\n"
+    with open(os.path.join(dest, ".git", "info", "sparse-checkout"), "w") as fh:
+        fh.write(pattern)
+    r = _run(["git"] + auth + ["-C", dest, "checkout"], timeout=timeout)
+    if r.returncode != 0:
+        shutil.rmtree(dest, ignore_errors=True)
+        return False, f"sparse checkout failed: {r.stderr.decode(errors='ignore')[:80]}", None
+    return True, "cloned", found.path
+
+
 def _clone(url, dest, depth=1, timeout=180):
     if os.path.isdir(dest):
         return True, "already present"
@@ -68,10 +114,18 @@ def fetch(spec, candidates, jobs=8, keep_git=False, progress=None):
 
     def work(cand):
         dest = os.path.join(spec.corpus_dir, _safe_dir(cand["full_name"]))
-        ok, msg = _clone(cand["clone_url"], dest)
+        subpath = None
+        if spec.is_subproject:
+            ok, msg, subpath = clone_subproject(cand["clone_url"], dest, spec)
+        else:
+            ok, msg = _clone(cand["clone_url"], dest)
         if not ok:
             return cand, None, msg
-        v = verify_mod.verify(dest, spec)
+        # For a sub-project the comparison unit is the module directory, not
+        # the repository around it.
+        target = os.path.join(dest, subpath) if subpath else dest
+        v = verify_mod.verify(target, spec)
+        v.subpath = subpath
         if not v.ok:
             shutil.rmtree(dest, ignore_errors=True)
             return cand, None, v.reason
@@ -87,12 +141,19 @@ def fetch(spec, candidates, jobs=8, keep_git=False, progress=None):
             if v is None:
                 man["rejected"][name] = {"reason": msg}
             else:
-                man["accepted"][name] = {
-                    "dir": _safe_dir(name), "lines": v.lines, "files": v.files,
+                sp0 = getattr(v, "subpath", None)
+                entry = {
+                    "dir": os.path.join(_safe_dir(name), sp0) if sp0
+                           else _safe_dir(name),
+                    "lines": v.lines, "files": v.files,
                     "score": v.score, "stars": cand.get("stars", 0),
                     "owner": cand.get("owner", ""), "pushed_at": cand.get("pushed_at", ""),
                     "url": f"https://github.com/{name}",
                 }
+                if sp0:
+                    entry["subpath"] = sp0
+                    entry["repo_dir"] = _safe_dir(name)
+                man["accepted"][name] = entry
             if progress:
                 progress(done, len(todo), name, msg)
             if done % 25 == 0:

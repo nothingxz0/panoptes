@@ -33,11 +33,12 @@ def cmd_setup(a):
         # Re-run discovery against every source; later stages then pick up
         # whatever is new on their own.
         pipeline.run(s, stages=["discover"], force=True, max_repos=a.max,
-                     log=print)
+                     deep=a.deep, log=print)
         stages = ["fetch", "recover", "index", "calibrate"] if a.recover \
             else ["fetch", "index", "calibrate"]
     pipeline.run(s, stages=stages, force=a.force, jobs=a.jobs, recover=a.recover,
-                 max_repos=a.max, progress=lambda i, n, *r: _bar(i, n, r[0] if r else ""))
+                 max_repos=a.max, deep=a.deep,
+                 progress=lambda i, n, *r: _bar(i, n, r[0] if r else ""))
     print(f"\nReady in {(time.time()-t0)/60:.1f} min. Now run:")
     print(f"  ./pan check <submission_dir> -p {s.name} --student <github-handle>")
 
@@ -195,6 +196,9 @@ def build_parser():
     s_.add_argument("--refresh", action="store_true",
                     help="search all sources again for new repos, then fetch "
                          "and reindex only what is new")
+    s_.add_argument("--deep", action="store_true",
+                    help="also month-slice GitHub search (slow; the event log "
+                         "already covers most of what this adds)")
     s_.add_argument("--force", action="store_true",
                     help="redo every stage from scratch, including reindexing")
     s_.set_defaults(fn=cmd_setup)

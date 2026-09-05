@@ -34,13 +34,16 @@ def _conditions(spec):
 
 def find_repos(spec, min_events=1, verbose=True):
     """Return {full_name: metadata} for every repo GH Archive has ever seen."""
+    pre = spec.discovery.get("archive_prefilter")
+    prefilter = (f"positionCaseInsensitive(repo_name, '{pre}') > 0 AND "
+                 if pre else "")
     sql = f"""
     SELECT repo_name,
            count() AS events,
            min(created_at) AS first_seen,
            max(created_at) AS last_seen
     FROM github_events
-    WHERE {_conditions(spec)}
+    WHERE {prefilter}({_conditions(spec)})
     GROUP BY repo_name
     HAVING events >= {min_events}
     ORDER BY events DESC

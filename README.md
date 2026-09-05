@@ -86,7 +86,7 @@ One command, five stages, fully resumable — press Ctrl-C and rerun to continue
 
 | stage | what it does |
 |---|---|
-| **discover** | GitHub search (all query variants, sliced by date to beat the 1000-result cap) plus the GH Archive event log, which also finds repos since renamed or deleted |
+| **discover** | the GH Archive event log first — one query returns every repository that ever existed, including renamed and deleted ones — then GitHub search for whatever its name patterns miss. Add `--deep` to also month-slice search; the event log already covers most of what that adds |
 | **fetch** | clones each candidate, verifies it really is the project, deletes the ones that aren't |
 | **recover** | optional (`--recover`): tries Software Heritage for repos GitHub no longer serves |
 | **index** | fingerprints everything, collapses duplicate clusters |
@@ -94,6 +94,9 @@ One command, five stages, fully resumable — press Ctrl-C and rerun to continue
 
 Expect **30–60 minutes** and **~4 GB** for ft_irc, most of it cloning. It only
 has to be done once; rerun it monthly to pick up new repos.
+
+Discovery itself is fast — around three minutes for 14,000 candidates, because
+the event log answers in seconds and month-slicing search is off by default.
 
 Useful flags:
 
@@ -192,9 +195,41 @@ Both tolerate code that does not compile — much of the public corpus doesn't.
 
 ---
 
-## Adding a new project
+## Projects
 
-Copy `projects/ft_irc.yaml`, change the values, run setup. No code changes.
+```
+ft_irc            IRC server        whole repository
+cpp00 .. cpp09    C++ modules       a directory inside a repository
+```
+
+### Whole projects vs sub-projects
+
+`ft_irc` is a repository. A CPP module is not — students publish one repository
+holding every module, and the directory naming is wildly inconsistent:
+
+```
+cpp06/  CPP06/  cpp_06/  CPP_Module_06/  CPP 06/  C06/  06/  day-06/  module6/
+```
+
+...and sometimes the repository *is* the module, with `ex00/` at its root.
+
+So a pattern file may declare a `subproject` block. Panoptes then finds
+candidate directories by path pattern and **confirms each by content** — the
+directory must contain the classes the subject mandates for that module, and
+must not contain another module's classes. Measured against 162 real
+repositories, this locates the right directory with **97.1% recall and almost no
+false positives**.
+
+Fetching exploits the same information. A blobless clone (`--filter=blob:none`)
+downloads the commit and tree objects but no file contents, so the full path
+listing is available for a fraction of the transfer; the module is identified
+from that listing and only its files are then materialised via sparse checkout.
+For a repository holding ten modules this transfers roughly a tenth of the data.
+
+### Adding a new project
+
+Copy the closest existing pattern file, change the values, run setup. No code
+changes.
 
 ```yaml
 name: webserv

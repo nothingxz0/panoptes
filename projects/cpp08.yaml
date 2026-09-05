@@ -1,0 +1,81 @@
+# Pattern file for a single 42 project. Copy and edit to add another.
+#
+# CPP modules are SUB-PROJECTS: students publish one repository holding every
+# module, so this file describes how to find the module inside a repository as
+# well as how to recognise it.
+name: cpp08
+label: "42 C++ Module 08 — templated containers, iterators, algorithms"
+
+discovery:
+  queries:
+    - "cpp08 language:C++"
+    - "cpp_modules language:C++"
+    - "CPP-Modules language:C++"
+    - "cpp modules 42 language:C++"
+    - "42 cpp piscine language:C++"
+    - "cpp08 42"
+    - "cpp_modules 42cursus"
+  topics: [42cursus, 42school, 42born2code, ecole42, cpp-modules, cpp_modules]
+  name_patterns:
+    - '(?i)cpp[-_ ]?modules?'
+    - '(?i)c\+\+[-_ ]?modules?'
+    - '(?i)cpp[-_ ]?0?08'
+    - '(?i)42[-_ ]?cpp'
+    - '(?i)cpp[-_ ]?piscine|piscine[-_ ]?cpp'
+  size_kb: {min: 8, max: 60000}
+  skip_forks: true
+  archive_prefilter: cpp
+  archive_substrings: [cpp_module, cpp-module, cppmodule, cpp08, cpp_08, cpp-08,
+                       cpp_piscine, piscine_cpp, 42cpp, cpp42]
+
+# ---------------------------------------------------------------- SUB-PROJECT
+# Where inside a repository this module lives. A candidate directory is found
+# by path pattern and then confirmed by the classes it contains — directory
+# naming is wildly inconsistent (cpp08, CPP08, cpp_08, CPP_Module_08, Module08).
+subproject:
+  path_patterns:
+    # a component carrying a cpp/module marker and ending in the number
+    - '(?i)(?:^|/)[^/]*(?:cpp|c\+\+|module|mod|day)[^/]*?[-_ ]?(?<![0-9])0*8(?:/|$)'
+    # a bare number component: 06/ex00/... or 6/ex00/...
+    - '(?i)(?:^|/)(?<![0-9])0*8(?:/|$)'
+    # a C-prefixed component: C06, C_6
+    - '(?i)(?:^|/)c[-_ ]?(?<![0-9])0*8(?:/|$)'
+  required_stems: [Span, MutantStack, easyfind]
+  optional_stems: []
+  # Classes belonging to other modules — their presence means the path pattern
+  # grabbed the wrong directory.
+  forbidden_stems: [AAnimal, AForm, AMateria, Account, Animal, Array, Base, BitcoinExchange, Brain, Bureaucrat, Cat, Character, ClapTrap, Contact, Cure, DiamondTrap, Dog, Fixed, Form, FragTrap, Harl, HumanA, HumanB, ICharacter, IMateriaSource, Ice, Intern, Karen, MateriaSource, PhoneBook, PmergeMe, Point, PresidentialPardonForm, RPN, RobotomyRequestForm, ScalarConverter, ScavTrap, Serializer, ShrubberyCreationForm, Weapon, WrongAnimal, WrongCat, Zombie, iter, whatever]
+  required_threshold: 1
+  min_files: 2
+
+verification:
+  min_source_files: 2
+  min_total_lines: 60
+  required_tokens:
+    threshold: 1
+    weight: 4
+    tokens: [Span, MutantStack, easyfind]
+  optional_tokens:
+    weight: 1
+    tokens: []
+  reject_tokens: []
+  min_score: 4
+
+source:
+  extensions: ['.cpp', '.hpp', '.h', '.tpp', '.ipp', '.cc', '.hh']
+  # obj/ and build outputs carry no evidence and inflate nothing but noise.
+  exclude_dirs: ['.git', 'obj', 'objs', 'build', 'bin', '.vscode', 'node_modules']
+  basecode_files: []
+
+compare:
+  # Modules are small — a few hundred lines against ft_irc's few thousand — and
+  # Orthodox Canonical Form is mandated on every class, so identical
+  # constructor/assignment bodies are the norm rather than a signal. A smaller
+  # k keeps enough fingerprints to compare; aggressive document-frequency
+  # suppression removes the mandated boilerplate. Values are re-checked by
+  # `pan calibrate`, which reports the honest baseline they produce.
+  k_high: 20
+  k_low: 9
+  winnow_window: 6
+  boilerplate_df: 0.08
+  report_top_n: 25

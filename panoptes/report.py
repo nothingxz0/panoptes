@@ -120,8 +120,9 @@ def render(summary, matches, spec, out_path):
                  'renamed variables still match. Line numbers refer to the original '
                  'files.</div>')
     for x in shown:
-        d = os.path.join(spec.corpus_dir,
-                         x.repo.replace("/", "~"))
+        # Use the indexed directory: for a sub-project it points at the module
+        # inside the repository, which the repo name alone cannot reconstruct.
+        d = os.path.join(spec.corpus_dir, x.dir or x.repo.replace("/", "~"))
         p.append(f'<details class="ev"><summary>{html.escape(x.repo)} — '
                  f'{x.containment*100:.2f}% ({len(x.regions)} region'
                  f'{"s" if len(x.regions)!=1 else ""})</summary>')

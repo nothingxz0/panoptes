@@ -16,7 +16,14 @@ class Spec:
         self.verification = data.get("verification", {})
         self.source = data.get("source", {})
         self.compare = data.get("compare", {})
+        # Present when the project is a directory inside a larger repository
+        # (every CPP module) rather than a whole repository (ft_irc).
+        self.subproject = data.get("subproject")
         self.name_res = [re.compile(p) for p in self.discovery.get("name_patterns", [])]
+
+    @property
+    def is_subproject(self):
+        return bool(self.subproject)
 
     @property
     def corpus_dir(self):
