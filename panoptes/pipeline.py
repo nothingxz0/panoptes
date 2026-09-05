@@ -167,7 +167,13 @@ def run(spec, stages=None, force=False, jobs=10, recover=False,
         log(f"      honest longest run: {runs['run_null_median']} tokens median, "
             f"{runs['run_null_p99']} p99")
         log(f"      evidence threshold: {runs['run_null_threshold']} tokens")
-        _mark(state, "calibrate", spec, {**top, **runs})
+        ch = calibrate.channel_nulls(spec, progress=progress)
+        if ch:
+            log(f"      honest shape overlap: {ch['ast_null_mean']*100:.1f}% "
+                f"(p99 {ch['ast_null_p99']*100:.1f}%)")
+            log(f"      honest type overlap : {ch['sig_null_mean']*100:.1f}% "
+                f"(p99 {ch['sig_null_p99']*100:.1f}%)")
+        _mark(state, "calibrate", spec, {**top, **runs, **ch})
     elif "calibrate" in stages:
         log(f"[5/5] calibrate — up to date "
             f"(honest best-match {con_meta['top_null_mean']*100:.2f}%)")

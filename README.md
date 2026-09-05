@@ -191,6 +191,20 @@ Measured over 600 honest independent pairs and 60 known-copy pairs:
 Type signatures are noisier so they carry a higher threshold, but they catch
 what the skeleton channel misses. Neither is reliable alone.
 
+**Every channel is calibrated per project.** Fixed thresholds do not transfer:
+
+| project | token best-match p99 | shape p99 | type-signature p99 |
+|---|---|---|---|
+| ft_irc | 13.4% | 4.1% | 10.8% |
+| cpp06 | 14.4% | 16.7% | 50.0% |
+
+Honest CPP module pairs share half their type signatures, because Orthodox
+Canonical Form is mandated on every class. A threshold meaningful for ft_irc
+fires on completely normal work here, so `pan calibrate` measures all three
+channels against the project's own corpus. A channel is also ignored entirely
+when fewer than eight functions are being compared — two shared out of four
+reads as 50% and is not evidence.
+
 Both tolerate code that does not compile — much of the public corpus doesn't.
 
 ---

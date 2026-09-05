@@ -5,6 +5,10 @@ from . import normalize, index as index_mod, verify as verify_mod, aststruct, ty
 from . import locate as locate_mod
 
 
+# Below this many functions a shared-fraction is too granular to be evidence.
+MIN_CHANNEL_SAMPLE = 8
+
+
 class Match:
     def __init__(self, repo, url, owner, shared, containment, z, regions):
         self.repo, self.url, self.owner = repo, url, owner
@@ -21,6 +25,10 @@ class Match:
         self.sig_frac = 0.0
         self.dir = ""             # corpus path; for a sub-project this is the
                                   # module directory, not the repository root
+        self.ast_p99 = 0.05       # per-project honest ceilings, from calibrate
+        self.sig_p99 = 0.10
+        self.ast_n = 0            # functions compared; below MIN_SAMPLE the
+        self.sig_n = 0            # channel is shown but does not score
 
     @property
     def verdict(self):
@@ -29,18 +37,22 @@ class Match:
         scores as its single best match."""
         if self.self_match:
             return "SELF"
-        # Thresholds per channel come from measured honest baselines:
-        # AST skeletons  honest mean 0.18%, p95 2.0%   -> 0.20 is ~10x p95
-        # type signatures honest mean 1.84%, p95 7.3%  -> 0.30 is ~4x p95
-        # Signatures are noisier, so they need a higher bar for the same weight.
+        # Every channel is judged against that channel's own measured ceiling
+        # for this project. Fixed constants do not transfer between projects:
+        # ft_irc honest pairs share 1.8% of type signatures, CPP module pairs
+        # share far more because Orthodox Canonical Form is mandated.
+        ast = self.ast_frac if self.ast_n >= MIN_CHANNEL_SAMPLE else 0.0
+        sig = self.sig_frac if self.sig_n >= MIN_CHANNEL_SAMPLE else 0.0
         if (self.containment >= max(0.30, 2.5 * self.p99)
-                or self.ast_frac >= 0.40 or self.sig_frac >= 0.55):
+                or ast >= max(0.40, 2.5 * self.ast_p99)
+                or sig >= max(0.55, 2.5 * self.sig_p99)):
             return "HIGH"
         if (self.containment >= max(0.18, 1.5 * self.p99)
-                or self.ast_frac >= 0.20 or self.sig_frac >= 0.30):
+                or ast >= max(0.20, 1.5 * self.ast_p99)
+                or sig >= max(0.30, 1.5 * self.sig_p99)):
             return "MEDIUM"
         if (self.containment >= self.p99 or self.longest >= self.run_threshold
-                or self.ast_frac >= 0.08 or self.sig_frac >= 0.15):
+                or ast >= self.ast_p99 or sig >= self.sig_p99):
             return "LOW"
         return "NORMAL"
 
@@ -144,6 +156,10 @@ def check(submission, spec, student_handles=(), top_n=None, evidence=True,
         m = Match(name, url, owner, len(hs & clean), cont, z, [])
         m.dir = rdir
         m.p99 = p99
+        # Per-project channel ceilings; fall back to the ft_irc-era constants
+        # only for a corpus calibrated before these were measured.
+        m.ast_p99 = meta.get("ast_null_p99", 0.05)
+        m.sig_p99 = meta.get("sig_null_p99", 0.10)
         m.run_threshold = meta.get("run_null_threshold", 250)
         if owner.lower() in handles:
             m.self_match = True
@@ -164,13 +180,18 @@ def check(submission, spec, student_handles=(), top_n=None, evidence=True,
                 root = os.path.join(spec.corpus_dir, m.dir)
                 m.regions = _longest_runs(stream, root, spec)
                 m.longest = max((r["tokens"] for r in m.regions), default=0)
+                # A fraction over a handful of functions is too coarse to
+                # carry a verdict: 2 shared of 4 reads as 50%. Below the
+                # minimum sample the channel is reported but not scored.
                 if sub_funcs:
                     cf = aststruct.repo_functions(root, spec)
                     m.ast_rows, m.ast_frac = aststruct.compare(sub_funcs, cf)
                     m.ast_shared = len(m.ast_rows)
+                    m.ast_n = min(len(sub_funcs), len(cf))
                 if sub_sigs:
                     cs = typesig.repo_signatures(root, spec)
                     m.sig_shared, m.sig_frac = typesig.compare(sub_sigs, cs)
+                    m.sig_n = min(len(sub_sigs), len(cs))
             if progress:
                 progress(i + 1, len(matches), m.repo)
 

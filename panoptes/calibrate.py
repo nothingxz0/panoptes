@@ -143,3 +143,68 @@ def longest_run_null(spec, sample_repos=90, sample_pairs=400, seed=42,
     con.commit()
     con.close()
     return stats, runs
+
+
+def channel_nulls(spec, sample_repos=90, sample_pairs=500, seed=23, progress=None):
+    """Null distributions for the AST-shape and type-signature channels.
+
+    These were originally judged against fixed thresholds tuned on ft_irc. That
+    does not transfer: 42 mandates Orthodox Canonical Form on every CPP module
+    class, so honest submissions share constructor, destructor and assignment
+    signatures wholesale, and a threshold meaningful for ft_irc fires constantly
+    here. Both channels are therefore measured per project, exactly as token
+    containment already is.
+
+    Sampled over cluster representatives only — teammates and re-uploads would
+    otherwise be counted as honest pairs.
+    """
+    import itertools
+    from . import aststruct, typesig, index as index_mod
+
+    con = index_mod.open_index(spec)
+    reps = [d for (d,) in con.execute("SELECT dir FROM repo WHERE representative=1")]
+    con.close()
+    rng = random.Random(seed)
+    picked = rng.sample(reps, min(sample_repos, len(reps)))
+
+    ast_by, sig_by = {}, {}
+    for d in picked:
+        root = os.path.join(spec.corpus_dir, d)
+        if not os.path.isdir(root):
+            continue
+        a = aststruct.repo_functions(root, spec) if aststruct.AVAILABLE else {}
+        t = typesig.repo_signatures(root, spec) if typesig.AVAILABLE else {}
+        if len(a) >= 4 and len(t) >= 4:
+            ast_by[d], sig_by[d] = a, t
+    names = sorted(ast_by)
+    if len(names) < 8:
+        return {}
+
+    pairs = list(itertools.combinations(names, 2))
+    rng.shuffle(pairs)
+    pairs = pairs[:sample_pairs]
+    av, sv = [], []
+    for n, (x, y) in enumerate(pairs, 1):
+        av.append(aststruct.compare(ast_by[x], ast_by[y])[1])
+        sv.append(typesig.compare(sig_by[x], sig_by[y])[1])
+        if progress and n % 100 == 0:
+            progress(n, len(pairs))
+    if progress:
+        progress(len(pairs), len(pairs))
+    av.sort(); sv.sort()
+
+    def q(v, p):
+        return v[min(len(v) - 1, int(p * len(v)))]
+
+    stats = {
+        "ast_null_mean": statistics.mean(av), "ast_null_p95": q(av, .95),
+        "ast_null_p99": q(av, .99), "ast_null_max": av[-1],
+        "sig_null_mean": statistics.mean(sv), "sig_null_p95": q(sv, .95),
+        "sig_null_p99": q(sv, .99), "sig_null_max": sv[-1],
+        "channel_null_pairs": len(pairs),
+    }
+    con = index_mod.open_index(spec)
+    con.executemany("INSERT OR REPLACE INTO meta VALUES (?,?)",
+                    [(k, str(v)) for k, v in stats.items()])
+    con.commit(); con.close()
+    return stats
