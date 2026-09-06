@@ -2,7 +2,7 @@
 the project we're after. Maintains corpus/<project>/_manifest.json.
 """
 import os, json, base64, shutil, subprocess, concurrent.futures as cf
-from . import verify as verify_mod, locate as locate_mod
+from . import verify as verify_mod, locate as locate_mod, languages
 
 MANIFEST = "_manifest.json"
 
@@ -41,6 +41,90 @@ def _git_auth_args():
 def _run(cmd, cwd=None, timeout=180):
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="/bin/true")
     return subprocess.run(cmd, capture_output=True, timeout=timeout, cwd=cwd, env=env)
+
+
+MAX_SPARSE_PATHS = 4000
+
+
+def _wanted_paths(paths, spec, prefix=""):
+    """The subset of a repository worth downloading.
+
+    Discovery is name-based, so it inevitably returns repositories holding
+    node_modules trees, model weights and screenshots. Listing the tree costs
+    nothing on a blobless clone, so the files that will actually be compared
+    are selected first and only those are materialised. A 287 MB repository
+    becomes a few dozen kilobytes.
+    """
+    excl = spec.exclude_dirs
+    langs = spec.languages
+    exts = spec.extensions
+    out = []
+    for p in paths:
+        p = p.strip()
+        if not p:
+            continue
+        if prefix and not p.startswith(prefix.rstrip("/") + "/"):
+            continue
+        parts = p.split("/")
+        if any(seg in excl or seg.startswith(".") for seg in parts[:-1]):
+            continue
+        base = parts[-1]
+        if langs:
+            if languages.language_of(base) in langs:
+                out.append(p)
+        elif base.endswith(exts):
+            out.append(p)
+    return out
+
+
+def clone_selective(url, dest, spec, timeout=240):
+    """Clone a repository fetching only the files this project compares.
+
+    Works for whole-repository projects and sub-projects alike: the module is
+    located from the path listing first when the spec declares one.
+    """
+    if os.path.isdir(dest):
+        return True, "already present", None
+    auth = _git_auth_args()
+    r = _run(["git"] + auth + ["clone", "--quiet", "--depth", "1", "--no-tags",
+                               "--single-branch", "--filter=blob:none",
+                               "--no-checkout", url, dest], timeout=timeout)
+    if r.returncode != 0:
+        return False, r.stderr.decode(errors="ignore").strip()[:120], None
+
+    r = _run(["git", "-C", dest, "ls-tree", "-r", "HEAD", "--name-only"], timeout=120)
+    if r.returncode != 0:
+        shutil.rmtree(dest, ignore_errors=True)
+        return False, "ls-tree failed", None
+    paths = r.stdout.decode(errors="ignore").split("\n")
+
+    subpath = None
+    if spec.is_subproject:
+        found = locate_mod.locate(paths, spec)
+        if not found:
+            shutil.rmtree(dest, ignore_errors=True)
+            return False, "sub-project not present in repo", None
+        subpath = found.path
+
+    wanted = _wanted_paths(paths, spec, subpath or "")
+    if not wanted:
+        shutil.rmtree(dest, ignore_errors=True)
+        return False, "no comparable files in repo", None
+    if len(wanted) > MAX_SPARSE_PATHS:
+        shutil.rmtree(dest, ignore_errors=True)
+        return False, f"{len(wanted)} candidate files (vendored tree?)", None
+
+    _run(["git", "-C", dest, "sparse-checkout", "init", "--no-cone"], timeout=60)
+    with open(os.path.join(dest, ".git", "info", "sparse-checkout"), "w") as fh:
+        # Leading slash anchors each path at the repository root; escaping is
+        # unnecessary because git treats these as gitignore-style patterns and
+        # the paths come from git itself.
+        fh.write("".join("/" + w + "\n" for w in wanted))
+    r = _run(["git"] + auth + ["-C", dest, "checkout"], timeout=timeout)
+    if r.returncode != 0:
+        shutil.rmtree(dest, ignore_errors=True)
+        return False, f"sparse checkout failed: {r.stderr.decode(errors='ignore')[:70]}", None
+    return True, "cloned", subpath
 
 
 def clone_subproject(url, dest, spec, timeout=240):
@@ -87,8 +171,13 @@ def clone_subproject(url, dest, spec, timeout=240):
 def _clone(url, dest, depth=1, timeout=180):
     if os.path.isdir(dest):
         return True, "already present"
+    # Skip blobs over 1 MB. Every file this tool compares is a few kilobytes,
+    # while name-based discovery inevitably pulls in repositories carrying
+    # model weights, datasets or images ("inception" is also a CNN). Those
+    # blobs are never fetched instead of being downloaded and discarded.
     cmd = (["git"] + _git_auth_args() +
-           ["clone", "--quiet", "--no-tags", "--single-branch", url, dest])
+           ["clone", "--quiet", "--no-tags", "--single-branch",
+            "--filter=blob:limit=1m", url, dest])
     if depth:
         cmd.insert(cmd.index("clone") + 1, "--depth")
         cmd.insert(cmd.index("--depth") + 1, str(depth))
@@ -114,11 +203,7 @@ def fetch(spec, candidates, jobs=8, keep_git=False, progress=None):
 
     def work(cand):
         dest = os.path.join(spec.corpus_dir, _safe_dir(cand["full_name"]))
-        subpath = None
-        if spec.is_subproject:
-            ok, msg, subpath = clone_subproject(cand["clone_url"], dest, spec)
-        else:
-            ok, msg = _clone(cand["clone_url"], dest)
+        ok, msg, subpath = clone_selective(cand["clone_url"], dest, spec)
         if not ok:
             return cand, None, msg
         # For a sub-project the comparison unit is the module directory, not

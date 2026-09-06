@@ -169,10 +169,14 @@ def check(submission, spec, student_handles=(), top_n=None, evidence=True,
     matches = matches[:top_n]
 
     if evidence:
+        # The shape and type-signature channels parse C++. For a project with
+        # no C++ in it (inception is Dockerfiles and shell) they are skipped
+        # rather than run against a grammar that cannot read the files.
+        cpp = spec.has_cpp
         sub_funcs = (aststruct.repo_functions(submission, spec)
-                     if aststruct.AVAILABLE else {})
+                     if cpp and aststruct.AVAILABLE else {})
         sub_sigs = (typesig.repo_signatures(submission, spec)
-                    if typesig.AVAILABLE else {})
+                    if cpp and typesig.AVAILABLE else {})
         for i, m in enumerate(matches):
             if m.verdict == "NORMAL" and i > 5:
                 continue

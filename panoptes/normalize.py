@@ -9,6 +9,7 @@ The tokenizer is regex-based and deliberately swappable: replace `tokenize`
 with a tree-sitter pass and the rest of the pipeline is unaffected.
 """
 import os, re
+from . import languages
 
 KEYWORDS = set("""
 alignas alignof and and_eq asm auto bitand bitor bool break case catch char char16_t
@@ -52,8 +53,10 @@ def strip_source(src):
     return src
 
 
-def tokenize(src, channel="abstract"):
+def tokenize(src, channel="abstract", lang="cpp"):
     """Yield (token, line) pairs for one source string."""
+    if lang != "cpp":
+        return languages.tokenize(src, lang, channel)
     stripped = strip_source(src)
     out = []
     line = 1
@@ -91,13 +94,22 @@ def extract_text(src):
 
 
 def source_files(root, spec):
-    """Walk a directory, yielding source files that count as the student's work."""
+    """Walk a directory, yielding files that count as the student's work.
+
+    A project may select by extension (C++) or by language (inception, whose
+    comparable content is Dockerfiles, shell scripts, compose and config files
+    that share no common extension).
+    """
     excl = spec.exclude_dirs
+    langs = spec.languages
     exts = spec.extensions
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in excl and not d.startswith(".")]
         for fn in sorted(filenames):
-            if fn.endswith(exts):
+            if langs:
+                if languages.language_of(fn) in langs:
+                    yield os.path.join(dirpath, fn)
+            elif fn.endswith(exts):
                 yield os.path.join(dirpath, fn)
 
 
@@ -110,10 +122,15 @@ def read(path):
 
 
 def token_stream(root, spec, channel="abstract"):
-    """Concatenated (token, relpath, line) for every source file under root."""
+    """Concatenated (token, relpath, line) for every source file under root.
+
+    Files are visited in sorted order so the stream is stable across machines;
+    fingerprints depend on it.
+    """
     stream = []
-    for path in source_files(root, spec):
+    for path in sorted(source_files(root, spec)):
         rel = os.path.relpath(path, root)
-        for tok, line in tokenize(read(path), channel):
+        lang = languages.language_of(path) or "cpp"
+        for tok, line in tokenize(read(path), channel, lang):
             stream.append((tok, rel, line))
     return stream

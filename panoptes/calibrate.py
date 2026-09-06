@@ -161,6 +161,8 @@ def channel_nulls(spec, sample_repos=90, sample_pairs=500, seed=23, progress=Non
     import itertools
     from . import aststruct, typesig, index as index_mod
 
+    if not spec.has_cpp:
+        return {}                      # these channels parse C++ only
     con = index_mod.open_index(spec)
     reps = [d for (d,) in con.execute("SELECT dir FROM repo WHERE representative=1")]
     con.close()

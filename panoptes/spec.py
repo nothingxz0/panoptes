@@ -30,6 +30,16 @@ class Spec:
         return os.path.join(CORPUS_DIR, self.name)
 
     @property
+    def languages(self):
+        """Languages this project compares, or [] to select by extension."""
+        return self.source.get("languages", [])
+
+    @property
+    def has_cpp(self):
+        """Whether the C++-only channels (AST shape, type signatures) apply."""
+        return not self.languages or "cpp" in self.languages
+
+    @property
     def extensions(self):
         return tuple(self.source.get("extensions", [".cpp", ".hpp", ".h"]))
 

@@ -1,0 +1,61 @@
+name: inception
+label: "42 Inception — Docker infrastructure (nginx + WordPress + MariaDB)"
+
+discovery:
+  queries:
+    - "inception 42"
+    - "inception 42cursus"
+    - "inception docker 42"
+    - "ft_inception"
+    - "inception nginx wordpress mariadb"
+    - "inception 1337"
+  topics: [42cursus, 42school, 42born2code, ecole42, inception, 42-inception]
+  name_patterns:
+    - '(?i)^ft[-_]?inception$'
+    - '(?i)inception'
+  size_kb: {min: 4, max: 30000}
+  skip_forks: true
+  archive_prefilter: inception
+  archive_substrings: [inception]
+
+# ------------------------------------------------------------- VERIFICATION
+# "Inception" is also a well-known CNN architecture, so name matching alone
+# returns thousands of machine-learning repositories. Verification is by
+# content: the three services the subject mandates must all be present.
+verification:
+  min_source_files: 4
+  min_total_lines: 60
+  required_tokens:
+    threshold: 3
+    weight: 4
+    tokens: [mariadb, wordpress, nginx]
+  optional_tokens:
+    weight: 1
+    tokens: [docker-compose, Dockerfile, volumes, networks, wp-config,
+             mysql, php-fpm, "443", certbot, openssl, VOLUME, EXPOSE]
+  # Machine-learning Inception, and Docker tutorials that are not this project.
+  reject_tokens: [tensorflow, keras, inception_v3, InceptionV3, torchvision,
+                  "import torch", GoogLeNet]
+  min_score: 5
+
+source:
+  # Selected by language rather than extension: the comparable content is
+  # Dockerfiles, shell scripts, compose and config files, which share none.
+  languages: [dockerfile, shell, yaml, conf, make]
+  # NOT 'wordpress': requirements/wordpress/ is the student's own service
+  # directory. Only genuinely vendored WordPress source is excluded.
+  exclude_dirs: ['.git', '.github', 'node_modules', 'vendor',
+                 'wp-content', 'wp-admin', 'wp-includes', 'data', 'volumes',
+                 'secrets', '.vscode', 'bonus_data']
+  basecode_files: []
+
+compare:
+  # Inception is small — a few hundred lines — and heavily dictated: the same
+  # three services, the same networks, the same volumes. A smaller k keeps
+  # enough fingerprints; document-frequency suppression removes the mandated
+  # scaffolding. `pan calibrate` measures what these actually produce.
+  k_high: 15
+  k_low: 7
+  winnow_window: 5
+  boilerplate_df: 0.05
+  report_top_n: 25
